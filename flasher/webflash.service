@@ -1,0 +1,15 @@
+[Unit]
+Description=MeshCore BLE field-flasher web UI
+After=bluetooth.service network.target
+Wants=bluetooth.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/rfkill unblock bluetooth
+ExecStart=/opt/flasher/venv/bin/python3 /opt/flasher/webflash.py
+Restart=on-failure
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

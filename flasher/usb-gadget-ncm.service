@@ -1,0 +1,12 @@
+[Unit]
+Description=USB CDC-NCM ethernet gadget (Windows-11-native, replaces legacy RNDIS)
+After=sys-kernel-config.mount systemd-modules-load.service
+Requires=sys-kernel-config.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/flasher/gadget-ncm.sh
+
+[Install]
+WantedBy=multi-user.target

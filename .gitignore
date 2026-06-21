@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# The legacy-DFU engine is cloned at setup time (see README), not vendored
+flasher/nrf_dfu_py/
+
+# Firmware images are user-supplied, not part of this repo
+*.zip
+flasher/firmware/
+
+# Runtime state written on the Pi
+config.json
+flashlog*
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp

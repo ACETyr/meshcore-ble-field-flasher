@@ -1,0 +1,5 @@
+# Bench (Windows/macOS/Linux) and Pi field-flasher runtime deps.
+# The legacy-DFU engine itself (recrof/nrf_dfu_py) is cloned separately — see README.
+bleak>=0.22
+pyserial>=3.5
+flask>=3.0
