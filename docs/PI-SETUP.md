@@ -103,6 +103,11 @@ gadget — see below).
   with the radio buttons, delete old ones. Uploads are validated as real DFU packages; non-app-only
   images (softdevice/bootloader) are flagged ⚠ (riskier — they can disturb identity/FS). Flash and
   Drone mode always use the active image. Carry multiple builds and switch on site.
+- **Target board** (the switch) — off = flash **RAK4631 only** (exact `RAK4631_OTA` match; the safe
+  default), on = **any MeshCore board**: matches every `*_OTA` advert (T114_OTA, T1000E_OTA, TECHO_OTA,
+  …) and any DFU-service bootloader. Applies to manual Flash, RSSI probe, Scan markers AND Drone mode;
+  persists across reboots. ⚠ In any-board mode make sure the active image matches the board you're
+  targeting — the flasher cannot tell a T114 image from a RAK image beyond the DFU manifest.
 - **Drone mode** (the switch) — for when ground→mast BLE range is too short and the Pi must ride a pole
   or drone next to the node, with nobody at the UI:
   1. In *auto-flash settings* set the **RSSI threshold** (default −80 dBm; only a node at least this

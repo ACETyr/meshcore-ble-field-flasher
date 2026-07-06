@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """MeshCore BLE field-flasher — web UI.
 
-A phone-browser front end for flashing a RAK4631 over BLE. The flash runs SERVER-SIDE in this
+A phone-browser front end for flashing MeshCore nRF52 nodes over BLE — RAK4631 by default, or ANY
+MeshCore board (*_OTA advertising name) via the "Target board" toggle. The flash runs SERVER-SIDE in this
 process, decoupled from the browser connection -> a dropped/slept phone does NOT interrupt it; just
 reload the page to see the live state. Reachable over the field AP (http://10.42.0.1), home WiFi, or
 the USB-gadget link (http://10.55.0.1). Reuses the bench-proven nrf_dfu_py engine.
@@ -25,7 +26,7 @@ from flask import Flask, jsonify, Response, redirect, request, send_file
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "nrf_dfu_py"))
-from dfu_lib import (NordicLegacyDFU, find_any_device, find_device_by_name_or_address,
+from dfu_lib import (NordicLegacyDFU, find_device_by_name_or_address,
                      DfuException, DFU_SERVICE_UUID, UPLOAD_MODE_APPLICATION, _UPLOAD_MODE_NAMES)
 from bleak import BleakScanner
 
@@ -39,6 +40,7 @@ MAX_UPLOAD = 8 * 1024 * 1024       # firmware zips are ~0.5-1 MB; 8 MB is a gene
 
 DEFAULT_CFG = {
     "active_firmware": "firmware.zip",
+    "any_board": False,   # False = RAK4631 only (exact-name match); True = any MeshCore board (*_OTA)
     "autoflash": {"rssi_threshold_dbm": -80, "arm_timeout_min": 30, "cooldown_sec": 120},
     "runtime": {"armed": False},
 }
@@ -73,6 +75,8 @@ def load_cfg():
     if isinstance(raw, dict):
         if raw.get("active_firmware"):
             cfg["active_firmware"] = raw["active_firmware"]
+        if isinstance(raw.get("any_board"), bool):
+            cfg["any_board"] = raw["any_board"]
         if isinstance(raw.get("autoflash"), dict):
             cfg["autoflash"].update(raw["autoflash"])
         if isinstance(raw.get("runtime"), dict):
@@ -151,6 +155,41 @@ def flashlog_tail(n=8):
 
 # ------------------------------------------------------------------------------------ flash engine
 
+def any_board():
+    return bool(load_cfg().get("any_board"))
+
+def _is_ota_name(name):
+    """OTA-mode target match. RAK-only mode: exact RAK4631_OTA. Any-board mode: the *_OTA suffix,
+    which every MeshCore nRF52 variant uses (T114_OTA, T1000E_OTA, TECHO_OTA, ...)."""
+    if any_board():
+        return name.upper().endswith("_OTA")
+    return name == OTA_NAME
+
+def _is_bootloader(name, adv=None):
+    """Bootloader match. RAK-only mode: exact 4631_DFU. Any-board mode: any advertised DFU service
+    (bootloaders always advertise it) or a DFU-ish name (4631_DFU, AdaDFU, ...)."""
+    if not any_board():
+        return name == BL_NAME
+    uuids = [u.lower() for u in (adv.service_uuids or [])] if adv else []
+    return DFU_SERVICE_UUID.lower() in uuids or "DFU" in name.upper()
+
+def _ota_label():
+    return "any *_OTA board" if any_board() else OTA_NAME
+
+async def _find_ota_device():
+    """Scan and return the strongest device currently in OTA mode (per the active board filter)."""
+    found = await BleakScanner.discover(timeout=5.0, return_adv=True)
+    best = None   # (rssi, dev, name)
+    for _key, (d, adv) in found.items():
+        name = adv.local_name or d.name or ""
+        if _is_ota_name(name):
+            rssi = adv.rssi if adv.rssi is not None else -999
+            if best is None or rssi > best[0]:
+                best = (rssi, d, name)
+    if best is None:
+        raise DfuException(f"no device in OTA mode found ({_ota_label()})")
+    return best[1]
+
 async def _find_bootloader(app_dev):
     try:
         bl = await find_device_by_name_or_address("DFU", force_scan=True, service_uuid=DFU_SERVICE_UUID)
@@ -177,15 +216,17 @@ async def do_flash(recover=False, address=None):
     n = len(dfu.bin_data)
     target_mac = None
     if recover:
-        log("Recovery: scanning for bootloader 4631_DFU ...")
+        # BL_NAME matches the RAK bootloader exactly; the DFU service UUID fallback inside
+        # find_device_by_name_or_address catches every other board's bootloader.
+        log(f"Recovery: scanning for bootloader ({BL_NAME} or any DFU service) ...")
         bl = await find_device_by_name_or_address(BL_NAME, force_scan=True, service_uuid=DFU_SERVICE_UUID)
     else:
         if address is not None:
             log(f"Re-acquiring {address} ...")
             dev = await find_device_by_name_or_address(address, force_scan=True)
         else:
-            log(f"Scanning for {OTA_NAME} (issue `start ota` on the node first) ...")
-            dev = await find_any_device([OTA_NAME])
+            log(f"Scanning for {_ota_label()} (issue `start ota` on the node first) ...")
+            dev = await _find_ota_device()
         target_mac = dev.address
         log(f"Found {dev.name} ({dev.address}) — jumping to bootloader ...")
         await dfu.jump_to_bootloader(dev)
@@ -217,7 +258,7 @@ async def do_rssi(seconds=30):
     samples = []
     def cb(d, adv):
         name = adv.local_name or d.name or ""
-        if "4631" in name.lower():
+        if _is_ota_name(name) or _is_bootloader(name, adv) or (not any_board() and "4631" in name):
             samples.append(adv.rssi)
             log(f"{name} {d.address}  RSSI {adv.rssi} dBm  "
                 f"(min {min(samples)} mean {sum(samples)//len(samples)} max {max(samples)})")
@@ -234,7 +275,7 @@ async def do_rssi(seconds=30):
         JOB["result"] = (f"RSSI min {worst} / mean {sum(samples)//len(samples)} / max {max(samples)} dBm "
                          f"— margin ~{worst+90} dB → {verdict}")
     else:
-        JOB["result"] = "no 4631 device seen — issue `start ota` on the node first"
+        JOB["result"] = f"no device seen ({_ota_label()}) — issue `start ota` on the node first"
     JOB["pct"] = 100
 
 async def do_scan(seconds=6):
@@ -243,12 +284,12 @@ async def do_scan(seconds=6):
     rows = []
     for _key, (d, adv) in found.items():
         rows.append((adv.rssi if adv.rssi is not None else -999,
-                     adv.local_name or d.name or "?", d.address))
-    rows.sort(reverse=True)  # strongest first
+                     adv.local_name or d.name or "?", d.address, adv))
+    rows.sort(reverse=True, key=lambda r: r[0])  # strongest first
     if not rows:
         log("no BLE devices seen")
-    for rssi, name, addr in rows:
-        mark = "  <-- OTA" if name == OTA_NAME else ("  <-- bootloader" if name == BL_NAME else "")
+    for rssi, name, addr, adv in rows:
+        mark = "  <-- OTA" if _is_ota_name(name) else ("  <-- bootloader" if _is_bootloader(name, adv) else "")
         log(f"{rssi:>4} dBm  {name:<20} {addr}{mark}")
     JOB["result"] = f"{len(rows)} device(s) seen — strongest first (see log)"
     JOB["pct"] = 100
@@ -272,8 +313,8 @@ def run_job(action, factory):
 # ----------------------------------------------------------------------------------- drone mode
 
 async def _scan_candidate(threshold):
-    """One BLE scan -> a flash target. Prefer recovering a node stuck in 4631_DFU (currently broken),
-    else the STRONGEST RAK4631_OTA at/above the RSSI threshold."""
+    """One BLE scan -> a flash target. Prefer recovering a node stuck in the bootloader (currently
+    broken), else the STRONGEST OTA-mode node (per the board filter) at/above the RSSI threshold."""
     found = await BleakScanner.discover(timeout=5.0, return_adv=True)
     best_ota = None       # (rssi, dev)
     recover_dev = None
@@ -282,7 +323,7 @@ async def _scan_candidate(threshold):
         uuids = [u.lower() for u in (adv.service_uuids or [])]
         if name == BL_NAME or DFU_SERVICE_UUID.lower() in uuids:
             recover_dev = d
-        elif name == OTA_NAME and adv.rssi is not None and adv.rssi >= threshold:
+        elif _is_ota_name(name) and adv.rssi is not None and adv.rssi >= threshold:
             if best_ota is None or adv.rssi > best_ota[0]:
                 best_ota = (adv.rssi, d)
     if recover_dev is not None:
@@ -417,11 +458,14 @@ def r_settings():
     _clamp("rssi_threshold_dbm", -120, 0)
     _clamp("arm_timeout_min", 0, 1440)
     _clamp("cooldown_sec", 0, 3600)
+    if "any_board" in data:
+        cfg["any_board"] = str(data.get("any_board")).lower() in ("1", "true", "on", "yes")
+        log(f"board filter: {'ANY board (*_OTA)' if cfg['any_board'] else 'RAK4631 only'}")
     save_cfg(cfg)
     if AUTO["armed"]:                          # apply a new timeout to the running arm immediately
         tm = af["arm_timeout_min"]
         AUTO["deadline"] = (AUTO["since"] + tm * 60) if tm else 0.0
-    return jsonify(ok=True, autoflash=af)
+    return jsonify(ok=True, autoflash=af, any_board=cfg["any_board"])
 
 @app.get("/firmware")
 def r_fw_list():
@@ -516,7 +560,8 @@ def r_status():
     return jsonify(status=JOB["status"], action=JOB["action"], pct=JOB["pct"],
                    result=JOB["result"], log=JOB["log"][-80:],
                    firmware=os.path.basename(fw), firmware_ok=os.path.exists(fw),
-                   autoflash=cfg["autoflash"], drone=drone, history=flashlog_tail(8))
+                   autoflash=cfg["autoflash"], any_board=cfg["any_board"],
+                   drone=drone, history=flashlog_tail(8))
 
 @app.get("/")
 def r_index():
@@ -555,6 +600,7 @@ pre{background:#161b22;padding:.6rem;border-radius:.5rem;height:34vh;overflow:au
 .track{position:absolute;inset:0;border-radius:34px;background:#30363d;transition:.2s;cursor:pointer}
 .track:before{content:"";position:absolute;height:26px;width:26px;left:4px;top:4px;border-radius:50%;background:#fff;transition:.2s}
 input:checked+.track:before{transform:translateX(28px)}
+#anySw:checked+.track{background:#1f6feb}
 .d-off .track{background:#30363d}.d-armed .track{background:#9e6a03}.d-flashing .track{background:#1f6feb}
 .d-ok .track{background:#1a7f37}.d-fail .track{background:#b62324}
 .dinfo{font-size:.82rem;color:#cdd9e5}
@@ -583,6 +629,14 @@ select{background:#0e1116;color:#e6edf3;border:1px solid #30363d;border-radius:.
  <label for=fwsel>flashes</label>
  <select id=fwsel onchange="selectFw(this.value)"></select>
  <div class=actype id=acttype></div>
+</div>
+
+<h2>Target board</h2>
+<div class="card drone">
+ <div><div style="font-weight:600" id=anyLbl>RAK4631 only</div>
+  <div class=dinfo>off = RAK4631_OTA only &middot; on = any MeshCore board (*_OTA)</div></div>
+ <label class=switch><input type=checkbox id=anySw onchange="anyToggle(this.checked)">
+  <span class=track></span></label>
 </div>
 
 <h2>Drone mode (unattended auto-flash)</h2>
@@ -631,11 +685,16 @@ async function act(a){await fetch('/'+a,{method:'POST'});poll();}
 async function droneToggle(on){
  if(on){
   const fw=(document.getElementById('droneFw').textContent||'(active image)');
-  if(!confirm('Arm Drone mode?\\n\\nIt will AUTO-FLASH this image to any RAK4631 in OTA mode above the '
+  const tgt=document.getElementById('anySw').checked?'ANY MeshCore board (*_OTA)':'any RAK4631';
+  if(!confirm('Arm Drone mode?\\n\\nIt will AUTO-FLASH this image to '+tgt+' in OTA mode above the '
    +'RSSI threshold:\\n\\n  '+fw+'\\n\\nCheck the active image is correct before arming.')){
    document.getElementById('droneSw').checked=false;return;}
  }
  await fetch('/drone/'+(on?'on':'off'),{method:'POST'});poll();
+}
+async function anyToggle(on){
+ await fetch('/settings',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({any_board:on})});poll();
 }
 async function saveSettings(){
  const b={rssi_threshold_dbm:sRssi.value,arm_timeout_min:sTimeout.value,cooldown_sec:sCooldown.value};
@@ -704,6 +763,10 @@ async function poll(){
    info+=' · '+(d.flash_count||0)+' flashed';}
   if(d.last)info+=' · last '+d.last.mac+' '+(('' +d.last.result).startsWith('SUCCESS')?'OK':'FAIL');
   document.getElementById('dinfo').textContent=info;
+  // target board toggle
+  const asw=document.getElementById('anySw');
+  if(document.activeElement!==asw)asw.checked=!!s.any_board;
+  document.getElementById('anyLbl').textContent=s.any_board?'Any board (*_OTA)':'RAK4631 only';
   // settings (don't clobber while typing)
   if(s.autoflash){setVal('sRssi',s.autoflash.rssi_threshold_dbm);
    setVal('sTimeout',s.autoflash.arm_timeout_min);setVal('sCooldown',s.autoflash.cooldown_sec);}
