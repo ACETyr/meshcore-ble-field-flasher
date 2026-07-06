@@ -3,6 +3,10 @@
 Goal: prove `nrf_dfu_py` over your host's onboard BLE flashes the RAK4631 reliably, and measure
 throughput. This is the workflow you validate on the bench before trusting the Pi field-flasher.
 
+> The walkthrough uses the RAK4631 (the bench-proven reference). Other MeshCore nRF52 boards work
+> the same way — pass their OTA advert name to the scripts (`--name <BOARD>_OTA`, e.g.
+> `WISMESHTAG_OTA`, `T114_OTA`); in the web UI use the **Target board** toggle instead.
+
 ## Prerequisites
 
 - A host (Windows / macOS / Linux) with onboard Bluetooth LE.

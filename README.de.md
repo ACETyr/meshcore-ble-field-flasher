@@ -2,9 +2,10 @@
 
 *[English version → README.md](README.md)*
 
-Ein netzwerkfreies, per Smartphone bedienbares Werkzeug zum Flashen von **MeshCore-RAK4631-Knoten
-(nRF52840)** **über Bluetooth Low Energy** — auch für Knoten hoch oben an einem Mast ohne
-IP-Anbindung vor Ort (kein WLAN, kein LTE, kein SSH am Standort).
+Ein netzwerkfreies, per Smartphone bedienbares Werkzeug zum Flashen von **MeshCore-nRF52-Knoten
+über Bluetooth Low Energy** — standardmäßig RAK4631, per *Zielboard*-Schalter im Web-UI **jedes
+MeshCore-Board** (T114, T1000-E, WisMesh Tag, T-Echo, …) — auch für Knoten hoch oben an einem Mast
+ohne IP-Anbindung vor Ort (kein WLAN, kein LTE, kein SSH am Standort).
 
 Ausgangspunkt war, das iPhone als DFU-Werkzeug abzulösen (nRF Connect for Mobile unter iOS ist
 quälend langsam und scheitert bei Legacy-DFU in etwa 4 von 5 Fällen). Herausgekommen ist ein kleines,
@@ -12,7 +13,7 @@ zuverlässiges Kit, das auf dem Laptop für den Werkbank-Betrieb und auf einem *
 als mitgeführter, autarker Feld-Flasher mit Web-UI im Smartphone-Browser läuft.
 
 > **Wichtig:** Geflasht wird der **Adafruit/OTAFix-Bootloader = Legacy-DFU** (App-only-`.zip`), also
-> der Bootloader, mit dem MeshCore-RAK4631-Builds ausgeliefert werden. Das ist *nicht* Nordic Secure
+> der Bootloader, mit dem MeshCore-nRF52-Builds ausgeliefert werden. Das ist *nicht* Nordic Secure
 > DFU und braucht *keinen* Nordic-Dongle — es nutzt das eingebaute Bluetooth des Hosts.
 
 ---
@@ -36,12 +37,17 @@ als mitgeführter, autarker Feld-Flasher mit Web-UI im Smartphone-Browser läuft
 | `recover_flash.py` | Direkt-in-den-Bootloader-Flash für einen bereits im DFU hängenden Knoten (z. B. nach abgebrochenem Flash). Ohne „Jump"-Schritt — der Weg zurück aus dem Brick-Verdacht. |
 | `ble_rssi_probe.py` | Misst RSSI / Link-Reserve zum Ziel, **bevor** man einen mehrminütigen Flash riskiert. |
 | `mc_serial.py` | Minimaler MeshCore-Serial-CLI-Helfer (`start ota` auslösen, `ver` / `public.key` lesen). |
-| `webflash.py` | **Web-UI im Smartphone-Browser** für den Pi — Buttons für Flash / RSSI / Scan / Recover, eine Firmware-Bibliothek und ein unbeaufsichtigter **Drohnen-Modus**. Der Flash läuft serverseitig, ein schlafendes/geschlossenes Smartphone unterbricht ihn also nicht. |
+| `webflash.py` | **Web-UI im Smartphone-Browser** für den Pi — Buttons für Flash / RSSI / Scan / Recover, eine Firmware-Bibliothek, ein **Zielboard**-Schalter (nur RAK4631 oder jedes MeshCore-`*_OTA`-Board) und ein unbeaufsichtigter **Drohnen-Modus**. Der Flash läuft serverseitig, ein schlafendes/geschlossenes Smartphone unterbricht ihn also nicht. |
 | `setup.sh` & Co. | Einmalige Pi-Einrichtung: venv, automatisch einspringender Feld-WLAN-AP, Captive Portal, USB-NCM-Gadget, Watchdog. |
 
 ## Zielhardware
 
-- **Knoten:** RAK4631 (Nordic nRF52840) mit MeshCore und Adafruit/OTAFix-Bootloader.
+- **Knoten:** RAK4631 (Nordic nRF52840) mit MeshCore und Adafruit/OTAFix-Bootloader — das
+  werkbank-erprobte Referenzziel und der sichere Standard des Web-UI.
+- **Jedes andere MeshCore-nRF52-Board** (T114, T1000-E, WisMesh Tag, T-Echo, Xiao, …): den
+  **Zielboard**-Schalter im Web-UI auf *jedes Board* stellen — er matcht das universelle
+  `*_OTA`-Advertising-Namenssuffix aller MeshCore-Varianten. Die CLI-Skripte erreichen dasselbe
+  mit `--name <BOARD>_OTA`.
 - **Host (Werkbank):** beliebiger Windows-/macOS-/Linux-Rechner mit eingebautem BLE.
 - **Host (Feld):** Raspberry Pi Zero 2 W (das 2 W — *nicht* das alte Zero W; man will BT 4.2).
 
@@ -113,6 +119,9 @@ Vollständige Pi-Anleitung: **[docs/PI-SETUP.md](docs/PI-SETUP.md)** (auf Englis
 
 - **Firmware-Bibliothek** — `.zip`-DFU-Images im Browser hochladen / auswählen / löschen (kein
   SSH/SCP).
+- **Zielboard** — aus = nur RAK4631 (exakter `RAK4631_OTA`-Match, der sichere Standard), an = jedes
+  MeshCore-Board (jedes `*_OTA`-Advertisement; das stärkste RSSI gewinnt). Gilt für Flash, RSSI,
+  Scan und den Drohnen-Modus; übersteht Neustarts.
 - **Drohnen-Modus** — unbeaufsichtigtes, RSSI-gegatetes Auto-Flashen, wenn man den Pi an einer Stange
   oder Drohne neben dem Mast montiert und niemand am UI sitzt. Neustart-fester Arm-Zustand,
   automatisches Disarm-Timeout und eine Flash-Historie, die belegt, was angekommen ist.

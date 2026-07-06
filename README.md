@@ -2,9 +2,10 @@
 
 *[Deutsche Version → README.de.md](README.de.md)*
 
-A network-free, phone-driveable tool for flashing **MeshCore RAK4631 (nRF52840)** repeater nodes
-**over Bluetooth Low Energy** — including nodes mounted high on a mast with no IP backhaul (no
-WiFi, no LTE, no SSH at the site).
+A network-free, phone-driveable tool for flashing **MeshCore nRF52 nodes over Bluetooth Low
+Energy** — RAK4631 by default, **any MeshCore board** (T114, T1000-E, WisMesh Tag, T-Echo, …) via
+the web UI's *Target board* toggle — including nodes mounted high on a mast with no IP backhaul
+(no WiFi, no LTE, no SSH at the site).
 
 It started as a way to retire the iPhone as a DFU tool (nRF Connect for Mobile on iOS is painfully
 slow and fails ~4 out of 5 times on legacy DFU). The result is a small, reliable kit that runs on a
@@ -12,7 +13,7 @@ laptop for the bench and on a **Raspberry Pi Zero 2 W** as a carried, self-conta
 with a phone-browser web UI.
 
 > **Heads-up:** this flashes the **Adafruit/OTAFix bootloader = legacy DFU** (app-only `.zip`), the
-> bootloader MeshCore RAK4631 builds ship with. It is *not* Nordic Secure DFU and does *not* need a
+> bootloader MeshCore nRF52 builds ship with. It is *not* Nordic Secure DFU and does *not* need a
 > Nordic dongle — it uses your host's onboard Bluetooth.
 
 ---
@@ -35,12 +36,16 @@ with a phone-browser web UI.
 | `recover_flash.py` | Direct-to-bootloader flash for a node already stuck in DFU (e.g. after an aborted flash). No "jump" step — this is the un-brick path. |
 | `ble_rssi_probe.py` | Measure RSSI / link margin to a target **before** risking a multi-minute flash. |
 | `mc_serial.py` | Minimal MeshCore serial-CLI helper (trigger `start ota`, read `ver` / `public.key`). |
-| `webflash.py` | **Phone-browser web UI** for the Pi — Flash / RSSI / Scan / Recover buttons, a firmware library, and an unattended **Drone mode**. The flash runs server-side, so a slept/closed phone won't interrupt it. |
+| `webflash.py` | **Phone-browser web UI** for the Pi — Flash / RSSI / Scan / Recover buttons, a firmware library, a **Target board** toggle (RAK4631-only or any MeshCore `*_OTA` board), and an unattended **Drone mode**. The flash runs server-side, so a slept/closed phone won't interrupt it. |
 | `setup.sh` & friends | One-shot Pi provisioning: venv, auto-fallback field WiFi AP, captive portal, USB-NCM gadget, watchdog. |
 
 ## Hardware target
 
-- **Node:** RAK4631 (Nordic nRF52840) running MeshCore with the Adafruit/OTAFix bootloader.
+- **Node:** RAK4631 (Nordic nRF52840) running MeshCore with the Adafruit/OTAFix bootloader — the
+  bench-proven reference target and the web UI's safe default.
+- **Any other MeshCore nRF52 board** (T114, T1000-E, WisMesh Tag, T-Echo, Xiao, …): flip the web
+  UI's **Target board** toggle to *any board* — it matches the universal `*_OTA` advertising-name
+  suffix every MeshCore variant uses. The CLI scripts take `--name <BOARD>_OTA` for the same effect.
 - **Host (bench):** any Windows / macOS / Linux machine with onboard BLE.
 - **Host (field):** Raspberry Pi Zero 2 W (the 2 W — *not* the old Zero W; you want BT 4.2).
 
@@ -106,6 +111,9 @@ Full Pi runbook: **[docs/PI-SETUP.md](docs/PI-SETUP.md)**.
 Open `http://10.42.0.1` (field AP), `http://pi-flasher.local/` (home), or `http://10.55.0.1` (USB cable).
 
 - **Firmware library** — upload / select / delete `.zip` DFU images in the browser (no SSH/SCP).
+- **Target board** — off = RAK4631 only (exact `RAK4631_OTA` match, the safe default), on = any
+  MeshCore board (every `*_OTA` advert; strongest RSSI wins). Applies to Flash, RSSI, Scan and
+  Drone mode; persists across reboots.
 - **Drone mode** — arm unattended, RSSI-gated auto-flash for when you mount the Pi on a pole or drone
   next to the mast and nobody is at the UI. Reboot-persistent arm state, auto-disarm timeout, and a
   flash history that proves what landed.
