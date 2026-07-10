@@ -621,6 +621,11 @@ select{background:#0e1116;color:#e6edf3;border:1px solid #30363d;border-radius:.
 .actype{font-size:.78rem;color:#8b949e;width:100%}
 .dflash{font-size:.82rem;color:#cdd9e5;margin:.5rem 0 .1rem}
 .fwscroll{max-height:150px;overflow:auto}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:9}
+.modal.show{display:flex}
+.modal .box{background:#161b22;border:1px solid #30363d;border-radius:.6rem;padding:1rem;max-width:420px;width:100%}
+.modal .box p{white-space:pre-wrap;font-size:.9rem;margin:.2rem 0 1rem}
+.modal .btns{display:flex;gap:.5rem}.modal .btns button{margin:0}
 </style></head><body><div class=wrap>
 <h1>MeshCore Field Flasher &nbsp;<span id=badge class="badge idle">idle</span></h1>
 
@@ -679,14 +684,31 @@ select{background:#0e1116;color:#e6edf3;border:1px solid #30363d;border-radius:.
  <div class=muted><a href="/flashlog" style="color:#58a6ff">download full log</a></div>
 </details>
 
+<div class=modal id=modal><div class=box>
+ <p id=modalMsg></p>
+ <div class=btns><button class=scan id=modalCancel>Cancel</button>
+  <button class=flash id=modalOk>Arm</button></div>
+</div></div>
+
 </div><script>
 let clockSent=false;
 async function act(a){await fetch('/'+a,{method:'POST'});poll();}
+// In-DOM confirm: native confirm() is a no-op in the captive-portal mini-browser (iOS CNA /
+// Android CaptivePortalLogin), which is how the field AP auto-opens this page. This modal renders there.
+function uiConfirm(msg){
+ return new Promise(res=>{
+  const m=document.getElementById('modal'),ok=document.getElementById('modalOk'),
+   cancel=document.getElementById('modalCancel');
+  document.getElementById('modalMsg').textContent=msg;m.classList.add('show');
+  const done=v=>{m.classList.remove('show');ok.onclick=null;cancel.onclick=null;res(v);};
+  ok.onclick=()=>done(true);cancel.onclick=()=>done(false);
+ });
+}
 async function droneToggle(on){
  if(on){
   const fw=(document.getElementById('droneFw').textContent||'(active image)');
   const tgt=document.getElementById('anySw').checked?'ANY MeshCore board (*_OTA)':'any RAK4631';
-  if(!confirm('Arm Drone mode?\\n\\nIt will AUTO-FLASH this image to '+tgt+' in OTA mode above the '
+  if(!await uiConfirm('Arm Drone mode?\\n\\nIt will AUTO-FLASH this image to '+tgt+' in OTA mode above the '
    +'RSSI threshold:\\n\\n  '+fw+'\\n\\nCheck the active image is correct before arming.')){
    document.getElementById('droneSw').checked=false;return;}
  }
